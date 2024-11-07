@@ -61,6 +61,11 @@ const TopupPlans = {
     }
 }
 
+const ERROR_MESSAGES = {
+    INVALID_DATE: "INVALID_DATE",
+    SUBSCRIPTIONS_NOT_FOUND: "SUBSCRIPTIONS_NOT_FOUND"
+}
+
 const isValidDateFormat = (dateString) => {
     const dateArray = dateString.split("-");
     if (dateArray.length !== 3) return false;
@@ -77,13 +82,12 @@ const parseToValidFormat = (date) => {
 
 const parseDate = (dateStr) => {
     const [day, month, year] = dateStr.split("-").map(Number);
-    return new Date(year, month - 1, day); // month - 1 because JavaScript months are 0-based
+    return new Date(year, month - 1, day);
 }
 
 fs.readFile(filename, "utf8", (err, data) => {
     if (err) throw err;
     const commands = data.split(/\r?\n/);
-    console.log(commands);
     let subscriptionDate;
     let subscriptions = {};
     let topupPlan;
@@ -92,35 +96,42 @@ fs.readFile(filename, "utf8", (err, data) => {
 
     commands.forEach(command => {
         const cmdArray = command.split(/\s+/);
-        if (cmdArray[0] === "START_SUBSCRIPTION") {
-            subscriptionDate = cmdArray[1];
-            if (!isValidDateFormat(subscriptionDate)) {
-                console.log("INVALID_DATE");
-                errorFound = true;
-            }
-        } else if (cmdArray[0] === "ADD_SUBSCRIPTION") {
-            const category = cmdArray[1];
-            const plan = cmdArray[2];
-
-            if (subscriptionPlans[category] && subscriptionPlans[category][plan]) {
-                subscriptions[category] = plan;
-            }
-        } else if (cmdArray[0] === "ADD_TOPUP") {
-            topupPlan = cmdArray[1];
-            topupMonths = cmdArray[2];
-        } else if (cmdArray[0] === "PRINT_RENEWAL_DETAILS") {
-            if (subscriptions.length === 0) {
-                console.log("SUBSCRIPTIONS_NOT_FOUND");
-                errorFound = true;
-                return;
-            }
-            if (errorFound) return;
-            printRenewalDetails(subscriptionDate, subscriptions, topupPlan, topupMonths);
+        switch (cmdArray[0]) {
+            case "START_SUBSCRIPTION":
+                subscriptionDate = cmdArray[1];
+                if (!isValidDateFormat(subscriptionDate)) {
+                    console.log(ERROR_MESSAGES.INVALID_DATE);
+                    errorFound = true;
+                }
+                break;
+            case "ADD_SUBSCRIPTION":
+                addSubscription(cmdArray[1], cmdArray[2], subscriptions);
+                break;
+            case "ADD_TOPUP":
+                if (TopupPlans[cmdArray[1]]) {
+                    topupPlan = cmdArray[1];
+                    topupMonths = cmdArray[2];
+                }
+                break;
+            case "PRINT_RENEWAL_DETAILS":
+                if (!subscriptions || subscriptions.length === 0) {
+                    console.log(ERROR_MESSAGES.SUBSCRIPTIONS_NOT_FOUND);
+                    errorFound = true;
+                    return;
+                }
+                if (!errorFound) {
+                    printRenewalDetails(subscriptionDate, subscriptions, topupPlan, topupMonths);
+                }
+                break;
         }
     })
-
-
 })
+
+const addSubscription = (category, plan, subscriptions) => {
+    if (subscriptionPlans[category] && subscriptionPlans[category][plan]) {
+        subscriptions[category] = plan;
+    }
+}
 
 const renewalReminder = (subscriptionDate, category, durationMonths) => {
     const parsedDate = parseDate(subscriptionDate);
@@ -140,6 +151,7 @@ const printRenewalDetails = (subscriptionDate, subscriptions, topupPlan, topupMo
         renewalReminder(subscriptionDate, category, duration);
         totalCost += price;
     }
+
     totalCost += topupMonths * TopupPlans[topupPlan]["PRICE"];
     console.log(`RENEWAL_AMOUNT ${totalCost}`);
 }
